@@ -1,0 +1,80 @@
+name: Sync Upstream
+
+# Pulls updates from upstream mem0ai/mem0 daily and merges them into this
+# fork's main branch, then triggers the docker-build workflow to rebuild images.
+# Triggers:
+#   1. Daily sync at 02:00 UTC
+#   2. Manual trigger (workflow_dispatch)
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Fetch upstream
+        run: |
+          git remote add upstream https://github.com/mem0ai/mem0.git
+          git fetch upstream main
+
+      - name: Check for upstream changes
+        id: changes
+        run: |
+          if [ "$(git rev-list --count HEAD..upstream/main)" -gt 0 ]; then
+            echo "has_changes=true" >> "$GITHUB_ENV"
+          else
+            echo "has_changes=false" >> "$GITHUB_ENV"
+          fi
+
+      - name: Merge upstream into main
+        if: env.has_changes == 'true'
+        id: merge
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git merge --no-edit upstream/main; then
+            echo "merged=true" >> "$GITHUB_ENV"
+          else
+            echo "merged=false" >> "$GITHUB_ENV"
+            git merge --abort
+          fi
+
+      - name: Push to fork
+        if: env.merged == 'true'
+        run: git push origin main
+
+      # Pushes made with GITHUB_TOKEN do not trigger push-event workflows,
+      # so explicitly dispatch the image build via workflow_dispatch
+      - name: Trigger image build
+        if: env.merged == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run docker-build.yml --ref main
+
+      - name: Open PR on conflict
+        if: env.merged == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BRANCH="sync/upstream-$(date -u +%Y%m%d-%H%M)"
+          git checkout -b "$BRANCH" upstream/main
+          git push origin "$BRANCH"
+          gh pr create --base main --head "$BRANCH" \
+            --title "Sync upstream $(date -u +%Y-%m-%d) (needs conflict resolution)" \
+            --body "Automatic sync from mem0ai/mem0 failed because of merge conflicts. This PR contains the upstream changes; please resolve the conflicts and merge it." || true

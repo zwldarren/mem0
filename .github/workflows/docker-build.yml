@@ -1,0 +1,93 @@
+name: Build Docker Images
+
+# Builds mem0 self-hosted images and pushes them to GitHub Container Registry (ghcr.io)
+# Triggers:
+#   1. Push to main (manual push or after sync-upstream merge)
+#   2. Daily scheduled rebuild at 03:00 UTC to keep images fresh
+#   3. Manual trigger (workflow_dispatch)
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: docker-build
+  cancel-in-progress: false
+
+jobs:
+  server:
+    name: Build mem0 server image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute tags
+        id: meta
+        run: |
+          echo "date=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+          echo "sha=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push server image
+        uses: docker/build-push-action@v7
+        with:
+          context: server
+          file: server/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:main-${{ steps.meta.outputs.sha }}
+            ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.date }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  dashboard:
+    name: Build mem0 dashboard image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute tags
+        id: meta
+        run: |
+          echo "date=$(date -u +%Y%m%d)" >> "$GITHUB_OUTPUT"
+          echo "sha=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push dashboard image
+        uses: docker/build-push-action@v7
+        with:
+          context: server/dashboard
+          file: server/dashboard/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}-dashboard:latest
+            ghcr.io/${{ github.repository }}-dashboard:main-${{ steps.meta.outputs.sha }}
+            ghcr.io/${{ github.repository }}-dashboard:${{ steps.meta.outputs.date }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
