@@ -82,7 +82,7 @@ services:
       mem0:
         condition: service_started
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:${MEM0_PORT:-8000}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:${MEM0_PORT:-8000}}
       API_INTERNAL_URL: http://mem0:8000
       NEXT_PUBLIC_INSTANCE_NAME: Mem0
     ports:
