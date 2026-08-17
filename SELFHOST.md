@@ -20,56 +20,30 @@ Tags: `latest`, `main-<commit sha>`, `<YYYYMMDD>` (for rollback by date).
 - **Build Docker Images** workflow: rebuilds daily at 03:00 UTC, and also on
   every push to `main` or manual trigger.
 
-## Usage
+## One-command deployment
+
+The repo root contains a zero-config `docker-compose.yml` (server + postgres +
+dashboard). No `.env` file is required:
 
 ```bash
-docker pull ghcr.io/zwldarren/mem0:latest
+docker compose up -d
 ```
 
-Production deployment example (server + postgres + dashboard):
+The only hard requirement is an LLM API key — mem0's server refuses to start
+without one. Export it, or create a `.env` file (see `.env.example`):
 
-```yaml
-services:
-  mem0:
-    image: ghcr.io/zwldarren/mem0:latest
-    ports:
-      - "8000:8000"
-    env_file:
-      - .env
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      - APP_DB_NAME=mem0_app
-      - JWT_SECRET=${JWT_SECRET}
-      - AUTH_DISABLED=${AUTH_DISABLED:-false}
-
-  postgres:
-    image: pgvector/pgvector:pg17
-    environment:
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -q -d postgres -U ${POSTGRES_USER:-postgres}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    volumes:
-      - postgres_db:/var/lib/postgresql/data
-
-  mem0-dashboard:
-    image: ghcr.io/zwldarren/mem0-dashboard:latest
-    ports:
-      - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
-      - API_INTERNAL_URL=http://mem0:8000
-      - NEXT_PUBLIC_INSTANCE_NAME=Mem0
-
-volumes:
-  postgres_db:
+```bash
+OPENAI_API_KEY=sk-... docker compose up -d
 ```
 
-> Note: the server image installs dependencies from `server/requirements.txt`
-> (see `server/Dockerfile`). For the full dev setup with the `mem0ai` package
-> installed from source, refer to the upstream `server/docker-compose.yaml`.
+Defaults (all overridable via `.env` or shell env):
+
+- `POSTGRES_PASSWORD=mem0-postgres` — change it for anything beyond local use
+- `JWT_SECRET` — auto-generated on first start and persisted in the
+  `mem0_history` volume, so tokens survive restarts
+- Ports: API on `8000`, dashboard on `3000`; postgres is internal only
+
+Services:
+
+- API: http://localhost:8000 (docs at `/docs`)
+- Dashboard: http://localhost:3000 — open it and follow the setup wizard

@@ -1,0 +1,104 @@
+name: mem0
+
+# One-command mem0 self-hosted deployment using prebuilt images.
+# Zero-config: works without a .env file. Optional overrides via .env
+# (see .env.example) or shell environment variables.
+#
+#   docker compose up -d
+#
+# Services:
+#   mem0            - API server (FastAPI)          -> http://localhost:8000
+#   mem0-dashboard  - Web UI (Next.js)              -> http://localhost:3000
+#   postgres        - pgvector database (internal)
+#
+# The only hard requirement is an LLM API key (OPENAI_API_KEY by default);
+# mem0's server refuses to start without one. Export it or add it to .env:
+#   OPENAI_API_KEY=sk-... docker compose up -d
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mem0-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Creates the mem0_app database on first init
+      - ./server/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -q -d postgres -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [mem0]
+
+  mem0:
+    image: ghcr.io/zwldarren/mem0:latest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh /deploy/entrypoint.sh
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      # LLM/embedder provider keys (from .env or shell env)
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      # Force container-internal DB host regardless of .env
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mem0-postgres}
+      POSTGRES_COLLECTION_NAME: ${POSTGRES_COLLECTION_NAME:-memories}
+      APP_DB_NAME: ${APP_DB_NAME:-mem0_app}
+      AUTH_DISABLED: ${AUTH_DISABLED:-false}
+      DASHBOARD_URL: http://localhost:3000
+      MEM0_DEFAULT_LLM_MODEL: ${MEM0_DEFAULT_LLM_MODEL:-gpt-5-mini}
+      MEM0_DEFAULT_EMBEDDER_MODEL: ${MEM0_DEFAULT_EMBEDDER_MODEL:-text-embedding-3-small}
+      MEM0_TELEMETRY: ${MEM0_TELEMETRY:-true}
+    volumes:
+      - ./deploy/entrypoint.sh:/deploy/entrypoint.sh:ro
+      - mem0_history:/app/history
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/openapi.json')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks: [mem0]
+
+  mem0-dashboard:
+    image: ghcr.io/zwldarren/mem0-dashboard:latest
+    restart: unless-stopped
+    depends_on:
+      mem0:
+        condition: service_started
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      API_INTERNAL_URL: http://mem0:8000
+      NEXT_PUBLIC_INSTANCE_NAME: Mem0
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks: [mem0]
+
+volumes:
+  postgres_data:
+  mem0_history:
+
+networks:
+  mem0:
+    driver: bridge
