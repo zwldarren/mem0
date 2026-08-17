@@ -58,7 +58,7 @@ services:
       POSTGRES_COLLECTION_NAME: ${POSTGRES_COLLECTION_NAME:-memories}
       APP_DB_NAME: ${APP_DB_NAME:-mem0_app}
       AUTH_DISABLED: ${AUTH_DISABLED:-false}
-      DASHBOARD_URL: http://localhost:3000
+      DASHBOARD_URL: http://localhost:${DASHBOARD_PORT:-3000}
       MEM0_DEFAULT_LLM_MODEL: ${MEM0_DEFAULT_LLM_MODEL:-gpt-5-mini}
       MEM0_DEFAULT_EMBEDDER_MODEL: ${MEM0_DEFAULT_EMBEDDER_MODEL:-text-embedding-3-small}
       MEM0_TELEMETRY: ${MEM0_TELEMETRY:-true}
@@ -66,7 +66,7 @@ services:
       - ./deploy/entrypoint.sh:/deploy/entrypoint.sh:ro
       - mem0_history:/app/history
     ports:
-      - "8000:8000"
+      - "${MEM0_PORT:-8000}:8000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/openapi.json')"]
       interval: 10s
@@ -82,11 +82,11 @@ services:
       mem0:
         condition: service_started
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_API_URL: http://localhost:${MEM0_PORT:-8000}
       API_INTERNAL_URL: http://mem0:8000
       NEXT_PUBLIC_INSTANCE_NAME: Mem0
     ports:
-      - "3000:3000"
+      - "${DASHBOARD_PORT:-3000}:3000"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/health"]
       interval: 10s
