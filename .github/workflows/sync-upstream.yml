@@ -14,7 +14,6 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  workflows: write
 
 concurrency:
   group: sync-upstream
@@ -58,7 +57,17 @@ jobs:
 
       - name: Push to fork
         if: env.merged == 'true'
-        run: git push origin main
+        env:
+          SYNC_PAT: ${{ secrets.SYNC_PAT }}
+        run: |
+          # GITHUB_TOKEN cannot be granted the workflows scope (GitHub rejects it), so
+          # pushing upstream changes that touch .github/workflows/** requires a PAT.
+          if [ -z "${SYNC_PAT}" ]; then
+            echo "::error::SYNC_PAT secret is not configured; cannot push workflow file changes"
+            exit 1
+          fi
+          git remote set-url origin "https://x-access-token:${SYNC_PAT}@github.com/${GITHUB_REPOSITORY}.git"
+          git push origin main
 
       # Pushes made with GITHUB_TOKEN do not trigger push-event workflows,
       # so explicitly dispatch the image build via workflow_dispatch
