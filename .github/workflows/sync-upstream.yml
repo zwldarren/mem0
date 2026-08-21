@@ -14,6 +14,8 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  # Required to push upstream changes that touch .github/workflows/**
+  workflows: write
 
 concurrency:
   group: sync-upstream
