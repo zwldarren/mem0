@@ -27,6 +27,10 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+          # Do NOT persist GITHUB_TOKEN into git config: it would override the
+          # PAT credentials on later pushes (extraheader wins over URL creds),
+          # and GITHUB_TOKEN can never gain the workflows permission.
+          persist-credentials: false
 
       - name: Fetch upstream
         run: |
@@ -66,6 +70,9 @@ jobs:
             echo "::error::SYNC_PAT secret is not configured; cannot push workflow file changes"
             exit 1
           fi
+          # Belt and braces: clear any persisted GITHUB_TOKEN credential
+          # (http.extraheader) so the URL below is really what authenticates.
+          git config --unset-all http.https://github.com/.extraheader || true
           git remote set-url origin "https://x-access-token:${SYNC_PAT}@github.com/${GITHUB_REPOSITORY}.git"
           git push origin main
 
@@ -81,9 +88,12 @@ jobs:
         if: env.merged == 'false'
         env:
           GH_TOKEN: ${{ github.token }}
+          SYNC_PAT: ${{ secrets.SYNC_PAT }}
         run: |
           BRANCH="sync/upstream-$(date -u +%Y%m%d-%H%M)"
           git checkout -b "$BRANCH" upstream/main
+          git config --unset-all http.https://github.com/.extraheader || true
+          git remote set-url origin "https://x-access-token:${SYNC_PAT}@github.com/${GITHUB_REPOSITORY}.git"
           git push origin "$BRANCH"
           gh pr create --base main --head "$BRANCH" \
             --title "Sync upstream $(date -u +%Y-%m-%d) (needs conflict resolution)" \
