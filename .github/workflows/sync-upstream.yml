@@ -14,6 +14,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write  # required to dispatch docker-build.yml via gh workflow run
 
 concurrency:
   group: sync-upstream
@@ -82,7 +83,7 @@ jobs:
         if: env.merged == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run docker-build.yml --ref main
+        run: gh workflow run docker-build.yml --ref main --repo "${GITHUB_REPOSITORY}"
 
       - name: Open PR on conflict
         if: env.merged == 'false'
@@ -95,6 +96,6 @@ jobs:
           git config --unset-all http.https://github.com/.extraheader || true
           git remote set-url origin "https://x-access-token:${SYNC_PAT}@github.com/${GITHUB_REPOSITORY}.git"
           git push origin "$BRANCH"
-          gh pr create --base main --head "$BRANCH" \
+          gh pr create --base main --head "$BRANCH" --repo "${GITHUB_REPOSITORY}" \
             --title "Sync upstream $(date -u +%Y-%m-%d) (needs conflict resolution)" \
             --body "Automatic sync from mem0ai/mem0 failed because of merge conflicts. This PR contains the upstream changes; please resolve the conflicts and merge it." || true
